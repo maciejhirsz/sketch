@@ -8,11 +8,10 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsCast;
 use web_sys::{HtmlElement, HtmlInputElement};
 
-use crate::internal;
-use crate::runtime::{EventContext, EventId, Then, Trigger};
+use crate::runtime::{EventContext, EventId, Then};
 
 #[wasm_bindgen]
 extern "C" {
@@ -101,11 +100,9 @@ where
     E: EventCast,
     Self: Sized + 'static,
 {
-    type Product: ListenerHandle;
+    fn update(self, p: &mut Self);
 
-    fn build(self) -> Self::Product;
-
-    fn update(self, p: &mut Self::Product);
+    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then>;
 }
 
 impl<E, F> Listener<E> for F
@@ -113,49 +110,13 @@ where
     F: Fn(&E) + 'static,
     E: EventCast,
 {
-    type Product = ListenerProduct<Self, E>;
-
-    fn build(self) -> Self::Product {
-        ListenerProduct {
-            closure: self,
-            eid: EventId::next(),
-            _event: PhantomData,
-        }
+    fn update(self, p: &mut Self) {
+        *p = self;
     }
 
-    fn update(self, p: &mut ListenerProduct<Self, E>) {
-        p.closure = self;
-    }
-}
-
-pub struct ListenerProduct<F, E> {
-    closure: F,
-    eid: EventId,
-    _event: PhantomData<E>,
-}
-
-pub trait ListenerHandle: Trigger {
-    fn js_value(&mut self) -> JsValue;
-}
-
-impl<F, E> ListenerHandle for ListenerProduct<F, E>
-where
-    F: Fn(&E) + 'static,
-    E: EventCast,
-{
-    fn js_value(&mut self) -> JsValue {
-        internal::make_event_handler(self.eid.0)
-    }
-}
-
-impl<F, E> Trigger for ListenerProduct<F, E>
-where
-    F: Fn(&E) + 'static,
-    E: EventCast,
-{
-    fn trigger<C: EventContext>(&mut self, ctx: &mut C) -> Option<Then> {
-        ctx.event(self.eid).map(|e| {
-            (self.closure)(e);
+    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
+        ctx.event(eid).map(|e| {
+            self(e);
 
             Then::Stop
         })

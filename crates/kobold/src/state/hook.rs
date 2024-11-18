@@ -5,14 +5,12 @@
 // use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::ptr::NonNull;
 
-use wasm_bindgen::JsValue;
 // use wasm_bindgen_futures::spawn_local;
 
-use crate::event::{EventCast, Listener, ListenerHandle};
-use crate::runtime::{EventContext, EventId, Then, Trigger};
-use crate::{internal, View};
+use crate::event::{EventCast, Listener};
+use crate::runtime::{EventContext, EventId, Then};
+use crate::View;
 
 pub struct Signal<S> {
     // _sid: StateId,
@@ -158,13 +156,6 @@ pub struct Bound<S, F> {
     _marker: PhantomData<S>,
 }
 
-#[derive(Clone, Copy)]
-pub struct BoundProduct<E, S, F> {
-    eid: EventId,
-    callback: F,
-    _marker: PhantomData<NonNull<(E, S)>>,
-}
-
 impl<E, S, F, O> Listener<E> for Bound<S, F>
 where
     S: 'static,
@@ -172,41 +163,11 @@ where
     F: Fn(&mut S, &E) -> O + 'static,
     O: Into<Then>,
 {
-    type Product = BoundProduct<E, S, F>;
-
-    fn build(self) -> Self::Product {
-        BoundProduct {
-            eid: EventId::next(),
-            callback: self.callback,
-            _marker: PhantomData,
-        }
-    }
-
-    fn update(self, p: &mut Self::Product) {
+    fn update(self, p: &mut Self) {
         p.callback = self.callback;
     }
-}
 
-impl<E, S, F, O> ListenerHandle for BoundProduct<E, S, F>
-where
-    S: 'static,
-    E: EventCast,
-    F: Fn(&mut S, &E) -> O + 'static,
-    O: Into<Then>,
-{
-    fn js_value(&mut self) -> JsValue {
-        internal::make_event_handler(self.eid.0)
-    }
-}
-
-impl<E, S, F, O> Trigger for BoundProduct<E, S, F>
-where
-    S: 'static,
-    E: EventCast,
-    F: Fn(&mut S, &E) -> O + 'static,
-    O: Into<Then>,
-{
-    fn trigger<C: EventContext>(&mut self, ctx: &mut C) -> Option<Then> {
-        ctx.with_state(self.eid, &self.callback)
+    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
+        ctx.with_state(eid, &self.callback)
     }
 }

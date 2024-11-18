@@ -4,6 +4,7 @@
 
 use std::cell::Cell;
 
+use wasm_bindgen::JsValue;
 use web_sys::Event;
 
 use crate::{internal, Mountable, View};
@@ -74,6 +75,10 @@ impl EventId {
         EVENT_ID.set(id + 1);
 
         EventId(id)
+    }
+
+    pub fn make_event_handler(self) -> JsValue {
+        internal::make_event_handler(self.0)
     }
 }
 
