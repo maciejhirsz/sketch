@@ -69,15 +69,22 @@ thread_local! {
 pub struct EventId(pub(crate) u32);
 
 impl EventId {
-    pub(crate) fn next() -> Self {
+    #[inline]
+    pub fn batch(n: u32) -> Self {
         let id = EVENT_ID.get();
 
-        EVENT_ID.set(id + 1);
+        EVENT_ID.set(id + n);
 
         EventId(id)
     }
 
-    pub fn make_event_handler(self) -> JsValue {
+    #[inline]
+    pub fn offset(self, offset: u32) -> Self {
+        EventId(self.0 + offset)
+    }
+
+    #[inline]
+    pub fn js_handler(self) -> JsValue {
         internal::make_event_handler(self.0)
     }
 }
