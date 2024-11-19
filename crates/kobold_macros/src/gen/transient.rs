@@ -142,7 +142,7 @@ impl Tokenize for Transient {
         if events > 0 {
             let _ = write!(
                 build,
-                "let eid_root = ::kobold::runtime::EventId::batch({events});"
+                "let eid_root = ::kobold::runtime::EventId::reserve({events});"
             );
 
             product_declare.push_str("eid_root: ::kobold::runtime::EventId,");

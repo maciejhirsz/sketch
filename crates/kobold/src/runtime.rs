@@ -70,7 +70,7 @@ pub struct EventId(pub(crate) u32);
 
 impl EventId {
     #[inline]
-    pub fn batch(n: u32) -> Self {
+    pub fn reserve(n: u32) -> Self {
         let id = EVENT_ID.get();
 
         EVENT_ID.set(id + n);
