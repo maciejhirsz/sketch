@@ -95,6 +95,71 @@ pub trait Trigger {
     }
 }
 
+mod turbo_batch {
+    use super::EventId;
+
+    trait Turbo {
+        type Combine<T: Turbo>: Turbo;
+
+        fn make() -> Self;
+
+        // fn combine<T: Turbo>() -> Self::Combine<T> {
+        //     Self::Combine::<T>::make()
+        // }
+    }
+
+    impl Turbo for () {
+        type Combine<T: Turbo> = T;
+
+        fn make() -> Self {
+            ()
+        }
+    }
+
+    impl Turbo for EventId {
+        type Combine<T: Turbo> = EventId;
+
+        fn make() -> Self {
+            EventId(0)
+        }
+    }
+
+    macro_rules! combine {
+        ($a:ty, $b:ty, $($cont:tt)+) => {
+            combine!(combine!($a, $b), $($cont)*)
+        };
+
+        ($a:ty, $b:ty) => {
+            <$a as Turbo>::Combine<$b>
+        };
+
+        ($a:ty) => {$a}
+    }
+
+    struct Foo<A: View, B: View>(A, B);
+
+    trait View {
+        type Tur: Turbo;
+    }
+
+    impl<A: View, B: View> View for Foo<A, B> {
+        type Tur = combine!(A::Tur, B::Tur, EventId);
+    }
+
+    fn foo() {
+        // let _: () = <<<() as Turbo>::Combine<()> as Turbo>::Combine<()> as Turbo>::Combine::<()>::make();
+        let _: () = <combine!((), (), (), (), ())>::make();
+        let _: EventId = <combine!(EventId, (), (), (), ())>::make();
+        let _: EventId = <combine!((), (), (), (), EventId)>::make();
+        let _: EventId = <combine!((), (), EventId, (), ())>::make();
+
+        let _: () = <combine!((), ())>::make();
+        let _: EventId = <combine!((), EventId)>::make();
+        let _: EventId = <combine!(EventId, ())>::make();
+        let _: EventId = <combine!(EventId, EventId)>::make();
+    }
+}
+
 /// Start the Kobold app by mounting given [`View`] in the document `body`.
 pub fn start<F, V>(render: F)
 where
