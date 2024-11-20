@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-kobold = { path = "../../crates/kobold" }
+kobold = { path = "../../crates/kobold", features = ["rlsf"] }
 gloo-storage = "0.2.1"
 wasm-bindgen = "0.2.84"
 

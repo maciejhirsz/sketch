@@ -140,52 +140,86 @@ impl Tokenize for Transient {
             .count();
 
         if events > 0 {
-            let _ = write!(
+            write!(
                 build,
                 "let eid_root = ::kobold::runtime::EventId::reserve({events});"
-            );
+            )
+            .ok();
 
             product_declare.push_str("eid_root: ::kobold::runtime::EventId,");
             build_fields.push_str("eid_root,");
         }
 
-        let mut event = 0;
+        let mut event_offset = 0;
 
         for field in self.fields.iter() {
             let typ = field.make_type();
 
-            let _ = write!(generics, "{typ},");
+            write!(generics, "{typ},").ok();
 
-            field.build(&mut build, &mut build2, event);
-            field.update(&mut update);
+            let Field { name, kind, .. } = field;
+
             field.declare(&mut declare);
-            field.trigger(&mut trigger, &mut event);
 
-            match field.kind {
-                FieldKind::StaticView => (),
+            match kind {
+                FieldKind::StaticView => {
+                    write!(build, "let {name} = self.{name}.build();").ok();
+                },
+                FieldKind::View => {
+                    write!(product_generics, "{typ},").ok();
+                    write!(product_generics_bounds, "{typ}::Product,").ok();
+                    write!(build, "let {name} = self.{name}.build();").ok();
+                    write!(build_fields, "{},", field.name).ok();
+                    write!(update, "self.{name}.update(&mut p.{name});").ok();
+                    write!(trigger_bounds, "{typ}: ::kobold::runtime::Trigger,").ok();
+                    write!(
+                        trigger,
+                        "if let Some(then) = self.{name}.trigger(ctx) {{ return Some(then) }}"
+                    )
+                    .ok();
+                    field.declare(&mut product_declare);
+                }
                 FieldKind::Event { event, target } => {
-                    let _ = write!(product_generics, "{typ},");
-                    let _ = write!(product_generics_bounds, "{typ},");
-                    let _ = write!(build_fields, "{}: self.{},", field.name, field.name);
-                    let _ = write!(trigger_bounds,
+                    write!(product_generics, "{typ},").ok();
+                    write!(product_generics_bounds, "{typ},").ok();
+                    write!(build, "let {name} = eid_root.offset({event_offset});").ok();
+                    write!(build_fields, "{}: self.{},", field.name, field.name).ok();
+                    write!(update, "self.{name}.update(&mut p.{name});").ok();
+                    write!(
+                        trigger_bounds,
                         "{typ}: ::kobold::event::Listener<\
-                            ::kobold::event::{event}<\
-                                ::kobold::reexport::web_sys::{target}\
-                            >
-                        >,"
-                    );
+                                ::kobold::event::{event}<\
+                                    ::kobold::reexport::web_sys::{target}\
+                                >
+                            >,"
+                    )
+                    .ok();
+                    write!(
+                        trigger,
+                        "if let Some(then) = self.{name}.trigger(ctx, self.eid_root.offset({event_offset})) {{\
+                            return Some(then);\
+                        }}"
+                    )
+                    .ok();
+                    event_offset += 1;
                     field.declare(&mut product_declare);
                 }
-                _ => {
-                    let _ = write!(product_generics, "{typ},");
-                    let _ = write!(product_generics_bounds, "{typ}::Product,");
-                    let _ = write!(build_fields, "{},", field.name);
+                FieldKind::Attribute { attr, el, prop } => {
+                    write!(product_generics, "{typ},").ok();
+                    write!(product_generics_bounds, "{typ}::Product,").ok();
+                    if attr.abi.is_some() {
+                        let _ = write!(build2, "let {name} = self.{name}.build();").ok();
+                    } else {
+                        let _ = write!(build2, "let {name} = self.{name}.build_in({prop}, &{el});").ok();
+                    }
+                    write!(build_fields, "{},", field.name).ok();
+                    write!(
+                        update,
+                        "self.{name}.update_in({prop}, &p.{el}, &mut p.{name});"
+                    )
+                    .ok();
                     field.declare(&mut product_declare);
                 }
-            }
-
-            if let FieldKind::View { .. } = field.kind {
-                let _ = write!(trigger_bounds, "{typ}: ::kobold::runtime::Trigger,");
             }
         }
 
@@ -533,71 +567,6 @@ impl Field {
         let typ = self.make_type();
 
         let _ = write!(buf, "{name}: {typ},");
-    }
-
-    fn build(&self, build: &mut String, build2: &mut String, event: usize) {
-        let Field { name, kind, .. } = self;
-
-        match kind {
-            FieldKind::StaticView => {
-                let _ = write!(
-                    build,
-                    "\
-                    let {name} = self.{name}.build();\
-                    "
-                );
-            }
-            FieldKind::View => {
-                let _ = write!(build, "let {name} = self.{name}.build();");
-            }
-            FieldKind::Event { .. } => {
-                let _ = write!(build, "let {name} = eid_root.offset({event});");
-            }
-            FieldKind::Attribute { attr, .. } if attr.abi.is_some() => {
-                let _ = write!(build2, "let {name} = self.{name}.build();");
-            }
-            FieldKind::Attribute { el, prop, .. } => {
-                let _ = write!(build2, "let {name} = self.{name}.build_in({prop}, &{el});");
-            }
-        }
-    }
-
-    fn trigger(&self, buf: &mut String, event: &mut usize) {
-        let Field { name, kind, .. } = self;
-
-        match kind {
-            FieldKind::StaticView | FieldKind::Attribute { .. } => (),
-            FieldKind::View => {
-                let _ = write!(
-                    buf,
-                    "if let Some(then) = self.{name}.trigger(ctx) {{ return Some(then) }}"
-                );
-            }
-            FieldKind::Event { .. } => {
-                let _ = write!(
-                    buf,
-                    "if let Some(then) = self.{name}.trigger(ctx, self.eid_root.offset({event})) {{ return Some(then) }}"
-                );
-                *event += 1;
-            }
-        }
-    }
-
-    fn update(&self, buf: &mut String) {
-        let Field { name, kind, .. } = self;
-
-        match kind {
-            FieldKind::StaticView => (),
-            FieldKind::View | FieldKind::Event { .. } => {
-                let _ = write!(buf, "self.{name}.update(&mut p.{name});");
-            }
-            FieldKind::Attribute { el, prop, .. } => {
-                let _ = write!(
-                    buf,
-                    "self.{name}.update_in({prop}, &p.{el}, &mut p.{name});"
-                );
-            }
-        }
     }
 
     fn invoke(&self) -> impl Tokenize {
