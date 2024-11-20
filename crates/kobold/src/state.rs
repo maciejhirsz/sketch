@@ -122,7 +122,7 @@ where
 {
     pub fn once<F, P>(self, handler: F) -> Once<S, R, F>
     where
-        F: FnOnce(Signal<S::State>) -> P,
+        F: FnOnce(&mut S::State) -> P,
     {
         Once {
             with_state: self,
@@ -174,15 +174,15 @@ impl<S, R, F, V, D> View for Once<S, R, F>
 where
     S: IntoState,
     R: Fn(*const Hook<S::State>) -> V,
-    F: FnOnce(Signal<S::State>) -> D,
+    F: FnOnce(&mut S::State) -> D,
     V: View,
     D: 'static,
 {
     type Product = OnceProduct<S::State, V::Product, D>;
 
     fn build(self) -> Self::Product {
-        let inner = self.with_state.build();
-        let _no_drop = (self.handler)(Signal::new(&inner.state));
+        let mut inner = self.with_state.build();
+        let _no_drop = (self.handler)(&mut inner.state);
 
         OnceProduct { inner, _no_drop }
     }

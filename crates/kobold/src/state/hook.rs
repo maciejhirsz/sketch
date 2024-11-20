@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// use std::future::Future;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -13,14 +13,14 @@ use crate::runtime::{EventContext, EventId, Then};
 use crate::View;
 
 pub struct Signal<S> {
-    // _sid: StateId,
-    _state: PhantomData<*mut S>,
+    eid: EventId,
+    _state: PhantomData<S>,
 }
 
 impl<S> Signal<S> {
-    pub(crate) fn new(hook: &Hook<S>) -> Self {
+    pub(crate) fn new(eid: EventId) -> Self {
         Signal {
-            // _sid: hook.sid,
+            eid,
             _state: PhantomData,
         }
     }
@@ -103,27 +103,18 @@ impl<S> Hook<S> {
         }
     }
 
-    // pub fn bind_async<E, F, T>(&self, callback: F) -> impl Listener<E>
-    // where
-    //     S: 'static,
-    //     E: EventCast,
-    //     F: Fn(Signal<S>, E) -> T + 'static,
-    //     T: Future<Output = ()> + 'static,
-    // {
-    //     let this = self as *const _;
-
-    //     move |e| {
-    //         // ⚠️ Safety:
-    //         // ==========
-    //         //
-    //         // This is fired only as event listener from the DOM, which guarantees that
-    //         // state is not currently borrowed, as events cannot interrupt normal
-    //         // control flow, and `Signal`s cannot borrow state across .await points.
-    //         let signal = Signal::new(unsafe { &*this });
-
-    //         spawn_local(callback(signal, e));
-    //     }
-    // }
+    pub fn bind_async<E, F, T>(&self, callback: F) -> BoundAsync<S, F>
+    where
+        S: 'static,
+        E: EventCast,
+        F: Fn(Signal<S>, &E) -> T + 'static,
+        T: Future<Output = ()> + 'static,
+    {
+        BoundAsync {
+            callback,
+            _marker: PhantomData,
+        }
+    }
 
     /// Get the value of state if state implements `Copy`. This is equivalent to writing
     /// `**hook` but conveys intent better.
@@ -169,5 +160,31 @@ where
 
     fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
         ctx.with_state(eid, &self.callback)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct BoundAsync<S, F> {
+    callback: F,
+    _marker: PhantomData<S>,
+}
+
+impl<E, S, F, T> Listener<E> for BoundAsync<S, F>
+where
+    S: 'static,
+    E: EventCast,
+    F: Fn(Signal<S>, &E) -> T + 'static,
+    T: Future<Output = ()> + 'static,
+{
+    fn update(self, p: &mut Self) {
+        p.callback = self.callback;
+    }
+
+    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
+        ctx.event(eid).map(|event| {
+            (self.callback)(Signal::new(eid), event);
+
+            Then::Stop
+        })
     }
 }
