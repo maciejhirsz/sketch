@@ -129,9 +129,9 @@ impl Tokenize for Transient {
         let mut trigger = String::new();
         let mut trigger_bounds = String::new();
 
-        let mut product_declare = String::new();
-        let mut product_generics = String::new();
-        let mut product_generics_bounds = String::new();
+        let mut p_declare = String::new();
+        let mut p_gen = String::new();
+        let mut p_gen_bounds = String::new();
 
         let events = self
             .fields
@@ -146,7 +146,7 @@ impl Tokenize for Transient {
             )
             .ok();
 
-            product_declare.push_str("eid_root: ::kobold::runtime::EventId,");
+            p_declare.push_str("eid_root: ::kobold::runtime::EventId,");
             build_fields.push_str("eid_root,");
         }
 
@@ -164,10 +164,10 @@ impl Tokenize for Transient {
             match kind {
                 FieldKind::StaticView => {
                     write!(build, "let {name} = self.{name}.build();").ok();
-                },
+                }
                 FieldKind::View => {
-                    write!(product_generics, "{typ},").ok();
-                    write!(product_generics_bounds, "{typ}::Product,").ok();
+                    write!(p_gen, "{typ},").ok();
+                    write!(p_gen_bounds, "{typ}::Product,").ok();
                     write!(build, "let {name} = self.{name}.build();").ok();
                     write!(build_fields, "{},", field.name).ok();
                     write!(update, "self.{name}.update(&mut p.{name});").ok();
@@ -177,21 +177,19 @@ impl Tokenize for Transient {
                         "if let Some(then) = self.{name}.trigger(ctx) {{ return Some(then) }}"
                     )
                     .ok();
-                    field.declare(&mut product_declare);
+                    field.declare(&mut p_declare);
                 }
                 FieldKind::Event { event, target } => {
-                    write!(product_generics, "{typ},").ok();
-                    write!(product_generics_bounds, "{typ},").ok();
+                    write!(p_gen, "{typ},").ok();
+                    write!(p_gen_bounds, "{typ},").ok();
                     write!(build, "let {name} = eid_root.offset({event_offset});").ok();
                     write!(build_fields, "{}: self.{},", field.name, field.name).ok();
                     write!(update, "self.{name}.update(&mut p.{name});").ok();
                     write!(
                         trigger_bounds,
-                        "{typ}: ::kobold::event::Listener<\
-                                ::kobold::event::{event}<\
+                        "{typ}: ::kobold::event::Listener<::kobold::event::{event}<\
                                     ::kobold::reexport::web_sys::{target}\
-                                >
-                            >,"
+                                >>,"
                     )
                     .ok();
                     write!(
@@ -202,15 +200,15 @@ impl Tokenize for Transient {
                     )
                     .ok();
                     event_offset += 1;
-                    field.declare(&mut product_declare);
+                    field.declare(&mut p_declare);
                 }
                 FieldKind::Attribute { attr, el, prop } => {
-                    write!(product_generics, "{typ},").ok();
-                    write!(product_generics_bounds, "{typ}::Product,").ok();
+                    write!(p_gen, "{typ},").ok();
+                    write!(p_gen_bounds, "{typ}::Product,").ok();
                     if attr.abi.is_some() {
-                        let _ = write!(build2, "let {name} = self.{name}.build();").ok();
+                        write!(build2, "let {name} = self.{name}.build();").ok();
                     } else {
-                        let _ = write!(build2, "let {name} = self.{name}.build_in({prop}, &{el});").ok();
+                        write!(build2, "let {name} = self.{name}.build_in({prop}, &{el});").ok();
                     }
                     write!(build_fields, "{},", field.name).ok();
                     write!(
@@ -218,7 +216,7 @@ impl Tokenize for Transient {
                         "self.{name}.update_in({prop}, &p.{el}, &mut p.{name});"
                     )
                     .ok();
-                    field.declare(&mut product_declare);
+                    field.declare(&mut p_declare);
                 }
             }
         }
@@ -260,12 +258,12 @@ impl Tokenize for Transient {
                 self.js,
                 format_args!(
                     "\
-                    struct TransientProduct <{product_generics}> {{\
-                        {product_declare}\
+                    struct TransientProduct <{p_gen}> {{\
+                        {p_declare}\
                         {declare_els}\
                     }}\
                     \
-                    impl<{product_generics}> ::kobold::runtime::Trigger for TransientProduct<{product_generics}> \
+                    impl<{p_gen}> ::kobold::runtime::Trigger for TransientProduct<{p_gen}> \
                     where \
                         {trigger_bounds}\
                     {{\
@@ -279,7 +277,7 @@ impl Tokenize for Transient {
                     \
                     }}\
                     \
-                    impl<{product_generics}> ::kobold::dom::Anchor for TransientProduct<{product_generics}> \
+                    impl<{p_gen}> ::kobold::dom::Anchor for TransientProduct<{p_gen}> \
                     where \
                         Self: 'static,\
                     ",
@@ -301,7 +299,7 @@ impl Tokenize for Transient {
             format_args!(
                 "\
                 {{\
-                    type Product = TransientProduct<{product_generics_bounds}>;\
+                    type Product = TransientProduct<{p_gen_bounds}>;\
                     \
                     fn build(self) -> Self::Product {{\
                         {build}\
