@@ -95,14 +95,12 @@ event! {
     MouseEvent,
 }
 
-pub trait Listener<E>
-where
-    E: EventCast,
-    Self: Sized + 'static,
-{
-    fn update(self, p: &mut Self);
+pub trait Listener<E: EventCast> {
+    type Product: ListenerHandle<E>;
 
-    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then>;
+    fn build(self) -> Self::Product;
+
+    fn update(self, p: &mut Self::Product);
 }
 
 impl<E, F> Listener<E> for F
@@ -110,10 +108,31 @@ where
     F: Fn(&E) + 'static,
     E: EventCast,
 {
+    type Product = Self;
+
+    fn build(self) -> Self {
+        self
+    }
+
     fn update(self, p: &mut Self) {
         *p = self;
     }
+}
 
+pub trait ListenerHandle<E>
+where
+    E: EventCast,
+    Self: Sized + 'static,
+{
+
+    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then>;
+}
+
+impl<E, F> ListenerHandle<E> for F
+where
+    F: Fn(&E) + 'static,
+    E: EventCast,
+{
     fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
         ctx.event(eid).map(|e| {
             self(e);

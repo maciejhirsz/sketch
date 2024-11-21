@@ -2,27 +2,28 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::cell::Cell;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::rc::{Rc, Weak};
 
 use wasm_bindgen_futures::spawn_local;
 
-use crate::event::{EventCast, Listener};
+use crate::event::{EventCast, Listener, ListenerHandle};
 use crate::runtime::{EventContext, EventId, Then};
 use crate::View;
 
+type SignalUpdate<S> = Cell<Option<Box<dyn FnOnce(&mut S) -> Then>>>;
+
 pub struct Signal<S> {
     eid: EventId,
-    _state: PhantomData<S>,
+    update: Weak<SignalUpdate<S>>,
 }
 
 impl<S> Signal<S> {
-    pub(crate) fn new(eid: EventId) -> Self {
-        Signal {
-            eid,
-            _state: PhantomData,
-        }
+    pub(crate) fn new(eid: EventId, update: Weak<SignalUpdate<S>>) -> Self {
+        Signal { eid, update }
     }
 
     /// Update the state behind this `Signal`.
@@ -44,24 +45,39 @@ impl<S> Signal<S> {
     ///     })
     /// }
     /// ```
-    pub fn update<F, O>(&self, _mutator: F)
+    pub fn update<F, O>(&self, mutator: F)
     where
-        F: FnOnce(&mut S) -> O,
+        F: FnOnce(&mut S) -> O + 'static,
         O: Into<Then>,
     {
-        todo!()
+        let Some(update) = self.update.upgrade() else {
+            return;
+        };
+
+        update.set(Some(Box::new(move |state| mutator(state).into())));
     }
 
     /// Same as [`update`](Signal::update), but it never renders updates.
-    pub fn update_silent<F>(&self, _mutator: F)
+    pub fn update_silent<F>(&self, mutator: F)
     where
-        F: FnOnce(&mut S),
+        F: FnOnce(&mut S) + 'static,
     {
-        todo!()
+        let Some(update) = self.update.upgrade() else {
+            return;
+        };
+
+        update.set(Some(Box::new(move |state| {
+            mutator(state);
+
+            Then::Stop
+        })));
     }
 
     /// Replace the entire state with a new value and trigger an update.
-    pub fn set(&self, val: S) {
+    pub fn set(&self, val: S)
+    where
+        S: 'static,
+    {
         self.update(move |s| *s = val);
     }
 }
@@ -154,10 +170,24 @@ where
     F: Fn(&mut S, &E) -> O + 'static,
     O: Into<Then>,
 {
+    type Product = Self;
+
+    fn build(self) -> Self {
+        self
+    }
+
     fn update(self, p: &mut Self) {
         p.callback = self.callback;
     }
+}
 
+impl<E, S, F, O> ListenerHandle<E> for Bound<S, F>
+where
+    S: 'static,
+    E: EventCast,
+    F: Fn(&mut S, &E) -> O + 'static,
+    O: Into<Then>,
+{
     fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
         ctx.with_state(eid, &self.callback)
     }
@@ -169,24 +199,35 @@ pub struct BoundAsync<S, F> {
     _marker: PhantomData<S>,
 }
 
-impl<E, S, F, T> Listener<E> for BoundAsync<S, F>
+pub struct BoundAsyncProduct<S, F> {
+    callback: F,
+    update: Rc<SignalUpdate<S>>,
+}
+
+impl<E, S, F, T> ListenerHandle<E> for BoundAsyncProduct<S, F>
 where
     S: 'static,
     E: EventCast,
     F: Fn(Signal<S>, &E) -> T + 'static,
     T: Future<Output = ()> + 'static,
 {
-    fn update(self, p: &mut Self) {
-        p.callback = self.callback;
-    }
+    // fn update(self, p: &mut Self) {
+    //     p.callback = self.callback;
+    // }
 
     fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
-        ctx.event(eid).map(|event| {
-            let fut = (self.callback)(Signal::new(eid), event);
+        match self.update.take() {
+            Some(update) => ctx.with_state(eid, move |state, _: &E| update(state)),
+            None => Some(Then::Stop),
+        };
 
-            spawn_local(fut);
+        panic!();
+        // ctx.event(eid).map(|event| {
+        //     let fut = (self.callback)(Signal::new(eid), event);
 
-            Then::Stop
-        })
+        //     spawn_local(fut);
+
+        //     Then::Stop
+        // })
     }
 }

@@ -32,7 +32,7 @@ pub trait ContextState {
     fn with_state<S, F>(&mut self, then: F) -> Option<Then>
     where
         S: 'static,
-        F: Fn(&mut S) -> Then;
+        F: FnOnce(&mut S) -> Then;
 
     fn borrow<'b>(&'b mut self) -> Self::Borrow<'b>;
 }
@@ -42,7 +42,7 @@ impl ContextState for () {
 
     fn with_state<S, F>(&mut self, _: F) -> Option<Then>
     where
-        F: Fn(&mut S) -> Then,
+        F: FnOnce(&mut S) -> Then,
     {
         None
     }
@@ -64,7 +64,7 @@ where
     fn with_state<S, F>(&mut self, then: F) -> Option<Then>
     where
         S: 'static,
-        F: Fn(&mut S) -> Then,
+        F: FnOnce(&mut S) -> Then,
     {
         use std::any::TypeId;
 
@@ -107,7 +107,7 @@ pub trait EventContext {
     where
         S: 'static,
         E: EventCast,
-        F: Fn(&mut S, &E) -> O,
+        F: FnOnce(&mut S, &E) -> O,
         O: Into<Then>;
 }
 
@@ -147,7 +147,7 @@ where
     where
         S: 'static,
         E: EventCast,
-        F: Fn(&mut S, &E) -> O,
+        F: FnOnce(&mut S, &E) -> O,
         O: Into<Then>,
     {
         if eid != self.eid {

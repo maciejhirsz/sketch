@@ -181,13 +181,13 @@ impl Tokenize for Transient {
                 }
                 FieldKind::Event { event, target } => {
                     write!(p_gen, "{typ},").ok();
-                    write!(p_gen_bounds, "{typ},").ok();
+                    write!(p_gen_bounds, "{typ}::Product,").ok();
                     write!(build, "let {name} = eid_root.offset({event_offset});").ok();
-                    write!(build_fields, "{}: self.{},", field.name, field.name).ok();
+                    write!(build_fields, "{}: self.{}.build(),", field.name, field.name).ok();
                     write!(update, "self.{name}.update(&mut p.{name});").ok();
                     write!(
                         trigger_bounds,
-                        "{typ}: ::kobold::event::Listener<::kobold::event::{event}<\
+                        "{typ}: ::kobold::event::ListenerHandle<::kobold::event::{event}<\
                                     ::kobold::reexport::web_sys::{target}\
                                 >>,"
                     )
