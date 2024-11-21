@@ -6,7 +6,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-// use wasm_bindgen_futures::spawn_local;
+use wasm_bindgen_futures::spawn_local;
 
 use crate::event::{EventCast, Listener};
 use crate::runtime::{EventContext, EventId, Then};
@@ -182,7 +182,9 @@ where
 
     fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
         ctx.event(eid).map(|event| {
-            (self.callback)(Signal::new(eid), event);
+            let fut = (self.callback)(Signal::new(eid), event);
+
+            spawn_local(fut);
 
             Then::Stop
         })
