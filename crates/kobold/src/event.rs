@@ -29,12 +29,13 @@ macro_rules! event {
         $(
             #[doc = concat!("Smart wrapper around a ", $doc, "which includes the type information of the event target")]
             #[repr(transparent)]
+            #[derive(Clone)]
             pub struct $event<T> {
                 event: web_sys::$event,
                 _target: PhantomData<T>,
             }
 
-            impl<T> EventCast for $event<T> {
+            impl<T: Clone> EventCast for $event<T> {
                 fn cast_from(e: &web_sys::Event) -> &Self {
                     unsafe { &*(e as *const _ as *const Self) }
                 }
@@ -73,7 +74,7 @@ macro_rules! event {
 }
 
 mod sealed {
-    pub trait EventCast {
+    pub trait EventCast: Clone {
         fn cast_from(e: &web_sys::Event) -> &Self;
     }
 
@@ -95,45 +96,26 @@ event! {
     MouseEvent,
 }
 
-pub trait Listener<E: EventCast> {
-    type Product: ListenerHandle<E>;
-
-    fn build(self) -> Self::Product;
-
-    fn update(self, p: &mut Self::Product);
-}
-
-impl<E, F> Listener<E> for F
-where
-    F: Fn(&E) + 'static,
-    E: EventCast,
-{
-    type Product = Self;
-
-    fn build(self) -> Self {
-        self
-    }
-
-    fn update(self, p: &mut Self) {
-        *p = self;
-    }
-}
-
-pub trait ListenerHandle<E>
+pub trait Listener<E>
 where
     E: EventCast,
     Self: Sized + 'static,
 {
+    fn update(self, p: &mut Self);
 
-    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then>;
+    fn trigger<C: EventContext>(&mut self, ctx: &mut C, eid: EventId) -> Option<Then>;
 }
 
-impl<E, F> ListenerHandle<E> for F
+impl<E, F> Listener<E> for F
 where
-    F: Fn(&E) + 'static,
+    F: FnMut(&E) + 'static,
     E: EventCast,
 {
-    fn trigger<C: EventContext>(&self, ctx: &mut C, eid: EventId) -> Option<Then> {
+    fn update(self, p: &mut Self) {
+        *p = self;
+    }
+
+    fn trigger<C: EventContext>(&mut self, ctx: &mut C, eid: EventId) -> Option<Then> {
         ctx.event(eid).map(|e| {
             self(e);
 

@@ -8,6 +8,75 @@ use crate::event::EventCast;
 use crate::runtime::{EventId, Then};
 use crate::state::Hook;
 
+pub type SignalUpdate<'a> = &'a mut dyn FnMut(*mut ()) -> Then;
+
+pub struct SignalCtx<'a, T = ()> {
+    eid: EventId,
+    update: SignalUpdate<'a>,
+    states: T,
+}
+
+impl<'a> SignalCtx<'a> {
+    pub fn new(eid: EventId, update: SignalUpdate<'a>) -> Self {
+        SignalCtx {
+            eid,
+            update,
+            states: (),
+        }
+    }
+}
+
+impl<'a, T> EventContext for SignalCtx<'a, T>
+where
+    T: ContextState,
+{
+    type Attached<'b, U> = SignalCtx<'b, (&'b mut Hook<U>, T::Borrow<'b>)>
+    where
+        U: 'static,
+        Self: 'b;
+
+    fn event<E>(&self, _: EventId) -> Option<&E>
+    where
+        E: EventCast,
+    {
+        None
+    }
+
+    fn attach<'b, S>(&'b mut self, hook: &'b mut Hook<S>) -> Self::Attached<'b, S>
+    where
+        S: 'static,
+        Self: 'b,
+    {
+        SignalCtx {
+            eid: self.eid,
+            update: self.update,
+            states: (hook, self.states.borrow()),
+        }
+    }
+
+    fn try_signal<S>(&mut self, eid: EventId) -> Option<Then>
+    where
+        S: 'static,
+    {
+        if self.eid != eid {
+            return None;
+        }
+
+        self.states
+            .with_state(|state: &mut S| (self.update)(state as *mut S as *mut ()))
+    }
+
+    fn with_state<S, E, F, O>(&mut self, _: EventId, _: F) -> Option<Then>
+    where
+        S: 'static,
+        E: EventCast,
+        F: FnOnce(&mut S, &E) -> O,
+        O: Into<Then>,
+    {
+        None
+    }
+}
+
 pub struct EventCtx<'a, T = ()> {
     eid: EventId,
     event: &'a Event,
@@ -103,6 +172,10 @@ pub trait EventContext {
         S: 'static,
         Self: 'b;
 
+    fn try_signal<S>(&mut self, eid: EventId) -> Option<Then>
+    where
+        S: 'static;
+
     fn with_state<S, E, F, O>(&mut self, eid: EventId, then: F) -> Option<Then>
     where
         S: 'static,
@@ -141,6 +214,13 @@ where
             event: self.event,
             states: (hook, self.states.borrow()),
         }
+    }
+
+    fn try_signal<S>(&mut self, _: EventId) -> Option<Then>
+    where
+        S: 'static,
+    {
+        None
     }
 
     fn with_state<S, E, F, O>(&mut self, eid: EventId, then: F) -> Option<Then>

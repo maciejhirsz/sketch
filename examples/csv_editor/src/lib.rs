@@ -23,7 +23,7 @@ fn editor() -> impl View {
         }
     });
 
-    let onkeydown = event!(move |state, e: KeyboardEvent<_>| {
+    let onkeydown = event!(move |state, e: &KeyboardEvent<_>| {
         if matches!(e.key().as_str(), "Esc" | "Escape") {
             state.editing = Editing::None;
 
@@ -59,7 +59,7 @@ fn head(col: usize, state: &Hook<State>) -> impl View + '_ {
     let value = state.source.get_text(&state.columns[col]);
 
     if state.editing == (Editing::Column { col }) {
-        let onchange = state.bind(move |state, e: Event<InputElement>| {
+        let onchange = state.bind(move |state, e: &Event<InputElement>| {
             state.columns[col] = Text::Owned(e.current_target().value().into());
             state.editing = Editing::None;
         });
@@ -81,14 +81,14 @@ fn cell(col: usize, row: usize, state: &Hook<State>) -> impl View + '_ {
     let value = state.source.get_text(&state.rows[row][col]);
 
     if state.editing == (Editing::Cell { row, col }) {
-        let onchange = event!(move |state, e: Event<InputElement>| {
+        let onchange = event!(move |state, e: &Event<InputElement>| {
             state.rows[row][col] = Text::Owned(e.current_target().value().into());
             state.editing = Editing::None;
         });
 
         let mut selected = false;
 
-        let onmouseenter = move |e: MouseEvent<InputElement>| {
+        let onmouseenter = move |e: &MouseEvent<InputElement>| {
             if !selected {
                 let input = e.current_target();
                 input.focus();

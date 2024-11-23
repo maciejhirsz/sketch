@@ -11,7 +11,7 @@ use crate::{internal, Mountable, View};
 
 mod ctx;
 
-use ctx::EventCtx;
+use ctx::{EventCtx, SignalCtx, SignalUpdate};
 
 pub use ctx::EventContext;
 
@@ -22,6 +22,8 @@ struct RuntimeData<P, U> {
 
 trait Runtime {
     fn update(&mut self, ctx: Option<&mut EventCtx>);
+
+    fn signal(&mut self, ctx: &mut SignalCtx) -> Option<Then>;
 }
 
 impl<P, U> Runtime for RuntimeData<P, U>
@@ -39,6 +41,10 @@ where
         }
 
         (self.update)(p);
+    }
+
+    fn signal(&mut self, ctx: &mut SignalCtx) -> Option<Then> {
+        self.product.trigger(ctx)
     }
 }
 
@@ -128,13 +134,11 @@ pub(crate) fn trigger(eid: EventId, event: Event) {
     }
 }
 
-pub(crate) fn lock_update<F, R>(f: F)
-where
-    F: FnOnce() -> R,
-    R: Into<Then>,
-{
+pub(crate) fn signal(eid: EventId, update: SignalUpdate<'_>) {
     if let Some(runtime) = RUNTIME.take() {
-        if let Then::Render = f().into() {
+        let mut ctx = SignalCtx::new(eid, update);
+
+        if let Some(Then::Render) = runtime.signal(&mut ctx) {
             runtime.update(None);
         }
 
