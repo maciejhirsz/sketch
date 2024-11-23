@@ -214,6 +214,10 @@ where
     }
 
     fn trigger<C: EventContext>(&mut self, ctx: &mut C, eid: EventId) -> Option<Then> {
+        if let Some(then) = ctx.try_signal::<S>(eid) {
+            return Some(then);
+        }
+
         let signal = Signal::new(eid);
 
         ctx.event(eid).map(|event: &E| {
