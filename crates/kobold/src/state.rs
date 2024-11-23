@@ -13,7 +13,7 @@
 //!
 use wasm_bindgen::JsValue;
 
-use crate::runtime::{EventContext, Then, Trigger};
+use crate::runtime::{EventContext, EventId, Then, Trigger};
 use crate::{Mountable, View};
 
 mod hook;
@@ -122,7 +122,7 @@ where
 {
     pub fn once<F, P>(self, handler: F) -> Once<S, R, F>
     where
-        F: FnOnce(&mut S::State) -> P,
+        F: FnOnce(Signal<S::State>) -> P,
     {
         Once {
             with_state: self,
@@ -137,6 +137,7 @@ pub struct Once<S, R, F> {
 }
 
 pub struct OnceProduct<S, P, D> {
+    eid: EventId,
     inner: StatefulProduct<S, P>,
     _no_drop: D,
 }
@@ -144,6 +145,7 @@ pub struct OnceProduct<S, P, D> {
 impl<S, P, D> Mountable for OnceProduct<S, P, D>
 where
     StatefulProduct<S, P>: Mountable,
+    P: Trigger,
     D: 'static,
 {
     type Js = <StatefulProduct<S, P> as Mountable>::Js;
@@ -163,10 +165,17 @@ where
 
 impl<S, P, D> Trigger for OnceProduct<S, P, D>
 where
-    StatefulProduct<S, P>: Trigger,
+    S: 'static,
+    P: Trigger,
 {
     fn trigger<C: EventContext>(&mut self, ctx: &mut C) -> Option<Then> {
-        self.inner.trigger(ctx)
+        let mut ctx = ctx.attach(&mut self.inner.state);
+
+        if let Some(then) = ctx.try_signal::<S>(self.eid) {
+            return Some(then);
+        }
+
+        self.inner.product.trigger(&mut ctx)
     }
 }
 
@@ -174,17 +183,23 @@ impl<S, R, F, V, D> View for Once<S, R, F>
 where
     S: IntoState,
     R: Fn(*const Hook<S::State>) -> V,
-    F: FnOnce(&mut S::State) -> D,
+    F: FnOnce(Signal<S::State>) -> D,
     V: View,
     D: 'static,
 {
     type Product = OnceProduct<S::State, V::Product, D>;
 
     fn build(self) -> Self::Product {
-        let mut inner = self.with_state.build();
-        let _no_drop = (self.handler)(&mut inner.state);
+        let inner = self.with_state.build();
+        let eid = EventId::reserve(1);
 
-        OnceProduct { inner, _no_drop }
+        let _no_drop = (self.handler)(Signal::new(eid));
+
+        OnceProduct {
+            eid,
+            inner,
+            _no_drop,
+        }
     }
 
     fn update(self, p: &mut Self::Product) {
