@@ -11,7 +11,9 @@ use oxc::semantic::{ScopeTree, SemanticBuilder, SemanticBuilderReturn, SymbolTab
 use oxc::span::SourceType;
 use oxc::transformer::{TransformOptions, Transformer, TransformerReturn};
 
-pub fn transform(source: &str, source_path: &Path) -> anyhow::Result<()> {
+use crate::report::Report;
+
+pub fn transform(source: &str, source_path: &Path) -> Report<()> {
     // let mut temp = String::new();
     // let mut snippets = PathBuf::from(source_path);
 
@@ -71,7 +73,7 @@ pub fn transform(source: &str, source_path: &Path) -> anyhow::Result<()> {
         errors,
         panicked,
         ..
-    } = Parser::new(&allocator, &source, SourceType::cjs()).parse();
+    } = Parser::new(&allocator, source, SourceType::cjs()).parse();
 
     assert!(!panicked);
     assert!(errors.is_empty());
@@ -86,15 +88,8 @@ pub fn transform(source: &str, source_path: &Path) -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let TransformerReturn {
-        errors,
-        symbols,
-        scopes,
-    } = Transformer::new(&allocator, source_path, options).build_with_symbols_and_scopes(
-        symbols,
-        scopes,
-        &mut program,
-    );
+    let TransformerReturn { errors, .. } = Transformer::new(&allocator, source_path, options)
+        .build_with_symbols_and_scopes(symbols, scopes, &mut program);
 
     assert!(errors.is_empty());
 
@@ -120,5 +115,5 @@ pub fn transform(source: &str, source_path: &Path) -> anyhow::Result<()> {
 
     panic!("{code}");
 
-    Ok(())
+    // Ok(())
 }

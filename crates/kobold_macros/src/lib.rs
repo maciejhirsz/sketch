@@ -4,6 +4,7 @@
 
 #![recursion_limit = "196"]
 #![warn(clippy::all, clippy::cast_possible_truncation, clippy::unused_self)]
+#![allow(dead_code)]
 
 #[cfg(not(test))]
 extern crate proc_macro as tokens;
